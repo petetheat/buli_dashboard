@@ -3,6 +3,7 @@ import streamlit.components.v1 as components
 import requests
 import pandas as pd
 from datetime import datetime
+import plotly.express as px
 
 
 def get_results(year, team_id):
@@ -13,6 +14,7 @@ def get_results(year, team_id):
     for match in results:
         spieltag_dict = {}
         if match['MatchIsFinished']:
+            match_day = match['Group']['GroupName']
             for match_results in match['MatchResults']:
                 if match_results['ResultName'] == 'Endergebnis':
                     if match_results['PointsTeam1'] > match_results['PointsTeam2']:
@@ -24,10 +26,15 @@ def get_results(year, team_id):
                     else:
                         spieltag_dict[match['Team1']['TeamId']] = [1]
                         spieltag_dict[match['Team2']['TeamId']] = [1]
-        df_spieltag = pd.DataFrame(spieltag_dict)
+        df_spieltag = pd.DataFrame(spieltag_dict, index=[match_day])
         saison.append(df_spieltag)
 
-    return pd.concat(saison)
+    df = pd.concat(saison)
+
+    if team_id in df.columns:
+        return df[team_id].dropna().cumsum()
+    else:
+        return pd.DataFrame(columns=[team_id], index=df.index.unique())
 
 
 def get_teams(year):
@@ -53,14 +60,24 @@ def compile_team_list(seasons):
 
 def main():
     current_season = 2022
-    seasons = list(range(2010, current_season + 1))
+    seasons = list(range(2006, current_season + 1))
 
     team_list = compile_team_list(seasons)
 
     selected_team = st.selectbox('Team', team_list['TeamName'])
     team_logo = team_list.loc[team_list['TeamName'] == selected_team, 'TeamIconUrl'].to_list()[0]
+    team_id = team_list.loc[team_list['TeamName'] == selected_team].index.to_list()[0]
 
-    components.html(f'<img src="{team_logo}" height="30">')
+    components.html(f'<img src="{team_logo}" height="40">')
+
+    df_temp = [get_results(year, team_id) for year in seasons]
+    df_temp = pd.concat(df_temp, axis=1)
+    df_temp.columns = seasons
+    df_temp.dropna(how='all', axis=1, inplace=True)
+
+    fig = px.line(df_temp, x=df_temp.index, y=df_temp.columns, title='Punkte nach Spieltagen')
+
+    st.plotly_chart(fig, use_container_width=True)
 
 
 if __name__ == "__main__":
